@@ -36,13 +36,13 @@ if ($savemsg) {
 
 $uname=posix_uname();
 if ($uname['machine']=='amd64')
-        ini_set('memory_limit', '250M');
+        ini_set('memory_limit', '768M');
 
 $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 
 	$tab_array = array();
 	$tab_array[] = array(gettext("General"), false, "/pkg_edit.php?xml=postfix.xml&id=0");
-	$tab_array[] = array(gettext("Domains"), false, "/pkg_edit.php?xml=postfix_domains.xml&id=0");
+	$tab_array[] = array(gettext("Domains"), false, "/pkg.php?xml=postfix_domains.xml");
 	$tab_array[] = array(gettext("Recipients"), false, "/pkg_edit.php?xml=postfix_recipients.xml&id=0");
 	$tab_array[] = array(gettext("Access Lists"), false, "/pkg_edit.php?xml=postfix_acl.xml&id=0");
 	$tab_array[] = array(gettext("Antispam"), false, "/pkg_edit.php?xml=postfix_antispam.xml&id=0");
@@ -75,14 +75,14 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
                         </span>
 			</td>
 			</tr>
-	
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("To: ");?></td>
                         <td width="78%" class="vtable"><textarea id="to" rows="2" cols="50%"></textarea>
                         <br/>
 			<span class="vexpl">
 			<?=gettext("with wildcard'*' only one line else one email per line.");?>
-			</span>	
+			</span>
 			</td>
 			</tr>
 
@@ -95,7 +95,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</span>
 			</td>
 			</tr>
-	
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Subject: ");?></td>
                         <td width="78%" class="vtable"><input type="text" class="formfld unknown" id="subject" size="65%">
@@ -105,7 +105,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</span>
 			</td>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Message_id: ");?>
                         <td width="78%" class="vtable"><input type="text" class="formfld unknown" id="msgid" size="65%">
@@ -114,7 +114,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			<?=gettext("Message unique id.");?>
 			</span>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("server: ");?></td>
                         <td width="78%" class="vtable"><input type="text" class="formfld unknown" id="server" size="30%">
@@ -133,7 +133,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</span>
 			</td>
 			</tr>
-	
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Message Status: ");?></td>
                         <td width="78%" class="vtable">
@@ -141,6 +141,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
                         	<option value="" selected="selected">any</option>
                         	<option value="sent">sent</option>
 							<option value="bounced">bounced</option>
+							<option value="soft bounce">soft bounce</option>
 							<option value="reject">reject</option>
 							<option value="spam">spam</option>
 							<option value="hold">hold</option>
@@ -152,21 +153,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</span>
 			</td>
 			</tr>
-	
-			<tr>
-                        <td width="22%" valign="top" class="vncell"><?=gettext("Log type: ");?></td>
-                        <td width="78%" class="vtable">
-                        <select name="drop2" id="queuetype">
-                        	<option value="NOQUEUE" selected="selected">NOQUEUE</option>
-							<option value="QUEUE">QUEUE</option>
-						</select>
-			<br>
-			<span class="vexpl">
-			<?=gettext("NOQUEUE logs means messages that where rejected in smtp negotiation.");?>
-			</span>
-			</td>
-			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Query Limit: ");?></td>
                         <td width="78%" class="vtable">
@@ -174,9 +161,9 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
                         	<option value="50" selected="selected">50</option>
 							<option value="150">150</option>
 							<option value="250">250</option>
-							<option value="250">500</option>
-							<option value="250">1000</option>
-							<option value="250">Unlimited</option>
+							<option value="500">500</option>
+							<option value="1000">1000</option>
+							<option value="unlimited">Unlimited</option>
 						</select>
 			<br>
 			<span class="vexpl">
@@ -184,7 +171,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</span>
 			</td>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Sqlite files: ");?></td>
                         <td width="78%" class="vtable">
@@ -205,11 +192,11 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
                         			echo '</select><br><span class="vexpl">'.gettext("Select what database files you want to use in your search.").'</span></td></td>';
                         	                        			}?>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("Message Fields: ");?></td>
                         <td width="78%" class="vtable">
-                        <select name="drop3" id="fields" size="13" multiple="multiple">
+                        <select name="drop3" id="fields" size="14" multiple="multiple">
                         	<option value="date"   selected="selected">Date</option>
                         	<option value="from"   selected="selected">From</option>
                         	<option value="to" 	   selected="selected">To</option>
@@ -218,12 +205,13 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
                         	<option value="status_info">Status Info</option>
                         	<option value="server">Server</option>
                         	<option value="subject">Subject</option>
-							<option value="size">Size</option>
-							<option value="sid">SID</option>
-							<option value="msgid">msgid</option>
-							<option value="bounce">bounce</option>
-							<option value="relay">Relay</option>
-							<option value="helo">Helo</option>
+				<option value="size">Size</option>
+				<option value="sid">SID</option>
+				<option value="msgid">msgid</option>
+				<option value="bounce">bounce</option>
+				<option value="relay">Relay</option>
+				<option value="helo">Helo</option>
+				<option value="log">Log source</option>
 			</select>
 			<br/>
 			<span class="vexpl">
@@ -242,7 +230,7 @@ $pf_version=substr(trim(file_get_contents("/etc/version")),0,3);
 			</div>
 			</div>
 			</div>
-			
+
 <!-- table results -->
 <br/>
 	<div class="panel panel-default" style="margin-right:auto;margin-left:auto;width:95%;">
@@ -268,21 +256,39 @@ function loopSelected(id)
   return(selectedArray);
 }
 
-function getsearch_results(sbutton) {
+function getsearch_results(sbutton,Wday,Wstatus) {
 		var $new_from=$('#from').val().replace("\n", "','");
 		var $new_to=$('#to').val().replace("\n", "','");
 		var $new_sid=$('#sid').val().replace("\n", "','");
-		var $files="";
-		 $('#Select1').each(function () {
-					var sThisVal = (this.checked ? "1" : "0");
-    					$files += ($files=="" ? $(this).val() : "," + $(this).val());
-					});
-		var $fields="";
-		var $errors=0;
-		$('#fields').each(function () {
+
+		//check if its a widget funcion call
+		if (typeof Wday != "undefined") {
+		  var $files= Wday + '.db';
+		} else {
+		  var $files="";
+ 		  $('#Select1').each(function () {
+                                        var sThisVal = (this.checked ? "1" : "0");
+                                        $files += ($files=="" ? $(this).val() : "," + $(this).val());
+                                        });
+
+		}
+
+		//check if its a widget funcion call
+                if (typeof Wstatus != "undefined") {
+                   var $status= Wstatus;
+	   	   var $fields='date,from,to,status,subject,status_info,delay';
+		   var $queue = 'ALL';
+                } else {
+                   var $status= $('#status').val();
+		   var $fields="";
+ 		   $('#fields').each(function () {
                                         var sThisVal = (this.checked ? "1" : "0");
                                         $fields += ($fields=="" ? $(this).val() : "," + $(this).val());
                                         });
+
+                }
+		var $errors=0;
+		//alert($status + ' ' + $files + ' ' + $queue);
 		if ( $files == "null" ){
 			alert ("Please select at least one file.");
 			$errors++;
@@ -309,12 +315,12 @@ function getsearch_results(sbutton) {
 					sid:	$new_sid,
 					limit:	$('#queuemax').val(),
 					fields:	$fields,
-					status:	$('#status').val(),
+					status:	$status,
 					server:	$('#server').val(),
 					subject:$('#subject').val(),
 					msgid:	$('#msgid').val(),
 					files:	$files,
-					queue:	$('#queuetype').val(),
+					queue:	'all',
 					relay:	$('#relay').val(),
 					sbutton:sbutton
                         	},
@@ -327,10 +333,10 @@ function getsearch_results(sbutton) {
                         	}
                 	}
                 	);
-		
+
 			}
 		 }
-		
+
 	function activitycallback_postfix_search(transport) {
 		$('search_results').innerHTML = transport.responseText;
 		scroll(0,1100);
@@ -338,6 +344,22 @@ function getsearch_results(sbutton) {
 		$('export').value="Export";
 	}
 }
+<?
+if (isset($_REQUEST['widget'])){
+	list($wfile,$wstatus)=explode(",",$_REQUEST['widget']);
+	$queue_select= ($wstatus=='reject' ? 'NOQUEUE' : 'QUEUE');
+	$select_search=<<<EOF
+$( document ).ready(function() {
+	$('#Select1').val('{$wfile}.db').change();
+	$('#queuetype').val('{$queue_select}').change();
+	$('#queuemax').val('unlimited').change();
+	getsearch_results('search','{$wfile}','{$wstatus}')
+	});
+EOF;
+print $select_search;
+}
+?>
+
 </script>
 <!-- </form> -->
 <?php include("foot.inc"); ?>

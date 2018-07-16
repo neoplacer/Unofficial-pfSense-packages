@@ -55,7 +55,7 @@ if ( $found[4] == 0 ) {
 
 foreach ($config['installedpackages']['menu'] as $menu) {
 	switch ($menu['name']) {
-		case 'mailscanner':
+		case 'Mailscanner':
 			$found[0]++;
 			break;
 	}

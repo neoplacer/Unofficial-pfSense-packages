@@ -8,7 +8,7 @@
 /*
  * postfix_acl.xml
  *
- * part of Unofficial packages for pfSense(R) softwate
+ * 
  * Copyright (c) 2011-2017 Marcello Coutinho
  * All rights reserved.
  *
@@ -47,7 +47,7 @@
 		</tab>
 		<tab>
 			<text>Domains</text>
-			<url>/pkg_edit.php?xml=postfix_domains.xml&amp;id=0</url>
+			<url>/pkg.php?xml=postfix_domains.xml</url>
 		</tab>
 		<tab>
 			<text>Recipients</text>
@@ -106,7 +106,7 @@
 		<field>
 			<fielddescr>Helo</fielddescr>
 			<fieldname>helo_maps</fieldname>
-			<description><![CDATA[<strong>PCRE filters</strong><a href=http://www.postfix.org/pcre_table.5.html> that are applied to initial message helo info. Hint:<br>
+			<description><![CDATA[<strong>PCRE filters</strong><a href=http://www.postfix.org/pcre_table.5.html> that are applied to initial message helo info.</a> Hint:<br>
 								/^tmpstr.*/ REJECT<br>
 								/^myserver.local/ REJECT external server with local domain info<br>
 								/^trusted_network.local/ DUNNO trusted remote misconfigured server<br>
@@ -203,6 +203,9 @@
 			<encoding>base64</encoding>
 		</field>
 	</fields>
+        <custom_php_command_before_form>
+                postfix_check_config();
+        </custom_php_command_before_form>
 	<custom_php_install_command>
 		postfix_php_install_command();
 	</custom_php_install_command>

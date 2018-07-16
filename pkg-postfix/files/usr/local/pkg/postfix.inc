@@ -31,9 +31,11 @@ require_once("util.inc");
 require_once("xmlrpc.inc");
 require_once("xmlrpc_client.inc");
 require_once("postfix_dkim.inc");
+require_once("postfix_dmarc.inc");
+require_once("postfix_postfwd.inc");
 
 define('POSTFIX_LOCALBASE','/usr/local');
-
+$savemsg_array = array();
 $uname=posix_uname();
 if ($uname['machine'] == 'amd64') {
 	ini_set('memory_limit', '250M');
@@ -43,6 +45,92 @@ function px_text_area_decode($text) {
 	return preg_replace('/\r\n/', "\n",base64_decode($text));
 }
 
+function postfix_check_config() {
+	global $savemsg, $config, $savemsg_array;
+
+	if (!isset($config['installedpackages']['postfix']['config'][0]['enable_postfix'])) {
+		return 1;
+	}
+
+        if (isset($_REQUEST['apply'])) {
+                postfix_start("no");
+		if (is_array($savemsg_array)) {
+			$savemsg = implode("<br/>",$savemsg_array);
+		}
+                return;
+        }
+        if (is_subsystem_dirty('postfix')) {
+                $savemsg  = gettext("Postfix configuration has been changed.") . "<br>" . gettext("The changes must be applied for them to take effect.");
+                $savemsg .= "</div><div class='pull-right'><button type='button' onclick=\"location.href='{$_SERVER['REQUEST_URI']}&apply=changes'\" class='btn btn-success'>";
+                $savemsg .= gettext("Apply Changes") . "</button><a>&nbsp;&nbsp;</a>";
+       }
+
+        return 0;
+}
+
+function px_check_sa_learn($section) {
+	global $config;
+	if (is_array($config['installedpackages']['postfixantispam'])) {
+		$antispam = $config['installedpackages']['postfixantispam']['config'][0];
+	}
+	$return="";
+	if ($antispam['sa_learn'] == 'on') {
+	   if (preg_match("/\w+/",$antispam['sa_learn_domain'])) {
+		$antispam_domain = $antispam['sa_learn_domain'];
+	   } else {
+		$antispam_domain = "antispam.local";
+	   }
+	   switch($section) {
+		case 'aliases':
+			$return  = "spam:              spam@spam.spam\n";
+                	$return .= "ham:               ham@ham.ham\n";
+                	$return .= "notspam:           ham@ham.ham\n";
+			$return .= "sa.learn:		sa.learn@sa.learn\n";
+			break;
+		case 'transport':
+			$return  = "spam.spam	sa-spam:\n";
+			$return .= "ham.ham	sa-ham:\n";
+			$return .= "sa.learn	sa-learn:\n";
+			break;
+		case 'recipients':
+			$return  = "spam@{$antispam_domain} OK\n";
+			$return .= "ham@{$antispam_domain} OK\n";
+			$return .= "spam@spam.spam OK\n";
+		        $return .= "ham@ham.ham OK\n";
+           		$return .= "sa.learn@sa.learn OK\n";
+			break;
+		case 'mydomain':
+			$return  = "mydomain = {$antispam_domain}\n";
+			$return .= 'myorigin = $mydomain' . "\n";
+			break;
+		case 'mydestination':
+			$return .= '$myhostname, localhost.$mydomain, $mydomain, spam.spam, ham.ham, sa.learn';
+			break;
+		case 'main':
+			$return  = "alias_maps = hash:/usr/local/etc/postfix/aliases\n";
+			$return .= "alias_database = hash:/usr/local/etc/postfix/aliases\n";
+			#$return .= "virtual_alias_domains = {$antispam_domain}\n";
+			#$return .= "virtual_alias_maps = hash:/usr/local/etc/postfix/virtual_alias_maps\n";
+			break;
+		case 'virtual':
+			if (preg_match("/\w+/",$antispam['sa_learn_domain'])) {
+				$antispam_domain = $antispam['sa_learn_domain'];
+			} else {
+				$antispam_domain = "antispam.local";
+			}
+			$return  = "spam@{$antispam_domain} spam@spam.spam\n";
+			$return .= "ham@{$antispam_domain} ham@ham.ham\n";
+			break;
+		case 'master':
+			$return  = "# Spam & Ham\n";
+			$return .= 'sa-spam	unix	-	n	n	-	-	pipe user=spamd argv=/usr/local/bin/sa-wrapper.pl spam' . "\n";
+			$return .= 'sa-ham	unix	-	n	n	-	-	pipe user=spamd argv=/usr/local/bin/sa-wrapper.pl ham' . "\n";
+			$return .= 'sa-learn	unix	-	n	n	-	-	pipe user=spamd argv=/usr/local/bin/sa-learn-pipe.sh' . "\n";
+			break;
+	   }
+	}
+	return $return;
+}
 function px_get_real_interface_address($iface) {
 	global $config;
 	$iface = convert_friendly_interface_to_real_interface_name($iface);
@@ -127,7 +215,11 @@ function sync_relay_recipients($via_cron = "cron") {
 		exec ('/usr/bin/sort -u '.$recipients_file.'.unsort > '.$recipients_file);
 		unlink_if_exists ($recipients_file.'.unsort');
 		exec (POSTFIX_LOCALBASE."/sbin/postmap ".POSTFIX_LOCALBASE."/etc/postfix/relay_recipients");
-		mwexec ("/usr/local/sbin/postfix reload");
+		if($via_cron == "gui") {
+			mark_subsystem_dirty('postfix');
+		} else {
+			mwexec ("/usr/local/sbin/postfix reload");
+		}
 	}
 	if ($relay_recipients != "" || $relay_ldap_recipients!= "") {
 		return ("relay_recipient_maps = hash:".POSTFIX_LOCALBASE."/etc/postfix/relay_recipients\n");
@@ -142,12 +234,40 @@ function check_cron() {
 	$cron_cmd_recipients = "/usr/local/bin/php -q /usr/local/www/postfix_recipients.php";
 	if (is_array($config['installedpackages']['postfix']['config'])) {
 		$postfix_enabled = $config['installedpackages']['postfix']['config'][0]['enable_postfix'];
+		$report_status = $config['installedpackages']['postfix']['config'][0]['report_status'];
 	}
+
+	// check report log
+	$cron_email="/usr/local/bin/php -q /root/postfix_report.php";
+	if ($report_status == "on") {        
+		install_cron_job($cron_email, true, "0", "0", "*", "*", "*", "root");
+	} else {
+		install_cron_job($cron_email, false);
+	}
+
+	if (is_array($config['installedpackages']['postfixantispam']['config'])) {
+                $antispam = $config['installedpackages']['postfixantispam']['config'][0];
+        }
+
+	$postwhite_update_cmd = "/usr/local/bin/postwhite";
+	if ($antispam['postwhite'] == "on" && $postfix_enabled == "on") {
+                install_cron_job($postwhite_update_cmd . ' > /dev/null', true, "10", "0", "*/3", "*", "*", "root");
+        } else {
+                install_cron_job($postwhite_update_cmd . ' > /dev/null', false);
+        }
+
+	$auto_whitelist_cmd = "/usr/local/bin/php -q /usr/local/www/postfix_cloud_domains.php clean";
+	if ($antispam['auto_whitelist'] > 0 && $postfix_enabled == "on") {
+                install_cron_job($auto_whitelist_cmd . ' > /dev/null', true, "20", "0", "*/3", "*", "*", "root");
+        } else {
+                install_cron_job($auto_whitelist_cmd . ' > /dev/null', false);
+        }
 
 	// check ldap update
 	if (is_array($config['installedpackages']['postfixrecipients']['config'])) {
 		$postfix_recipients_config = $config['installedpackages']['postfixrecipients']['config'][0];
 	}
+
 	// check crontab relay recipients
 	if (preg_match("/(\d+)(\w)/", $postfix_recipients_config['freq'], $matches)) {
 		$r_minute = "*";
@@ -173,7 +293,7 @@ function check_cron() {
 				$input_errors[] = "A valid number with a time reference is required for the field 'Frequency'";
 		}
 	}
-		
+
 	// check crontab Sqlite databases
 	if (is_array($config['installedpackages']['postfix']['config'])) {
 		$cron_sqlite_queue = $config['installedpackages']['postfix']['config'][0]['update_sqlite'];
@@ -204,24 +324,64 @@ function check_cron() {
 			}
 		}
 	}
-	
+
 	// update cron
 	if ($postfix_enabled == "on") {
 		if ($postfix_recipients_config['enable_ldap'] || $postfix_recipients_config['enable_url']) {
-			install_cron_job ("{$cron_cmd_recipients}", true, $r_minute, $r_hour, $r_mday, $r_month, $r_wday, $r_who);
+			install_cron_job ($cron_cmd_recipients . ' > /dev/null', true, $r_minute, $r_hour, $r_mday, $r_month, $r_wday, $r_who);
 		} else {
 			install_cron_job ("{$cron_cmd_recipients}", false);
 		}
 		if ($cron_sqlite_queue != "" && $cron_sqlite_queue != "never") {
 			// First remove the previous schedule since the command was appended as well
 			install_cron_job ("{$cron_cmd_sqlite}", false);
-			install_cron_job ("{$cron_postfix_sqlite}", true, $s_minute, $s_hour, $s_mday, $s_month, $s_wday, $s_who);
+			install_cron_job ($cron_postfix_sqlite . ' > /dev/null', true, $s_minute, $s_hour, $s_mday, $s_month, $s_wday, $s_who);
 		} else {
 			install_cron_job ("{$cron_cmd_sqlite}", false);
 		}
 	} else {
 		install_cron_job ("{$cron_cmd_recipients}", false);
 		install_cron_job("{$cron_cmd_sqlite}", false);
+	}
+}
+
+function postfix_check_autowhitelist($auto_whitelist){
+	if ($auto_whitelist > 0) {
+		return (",\n\t\t\tcidr:" . POSTFIX_LOCALBASE . "/etc/postfix/auto_whitelisted_cidr\n");
+	} else {
+		return ("\n");
+	}
+}
+
+function postfix_check_postwhite($status,$domains) {
+	$postwhite_acl_file = POSTFIX_LOCALBASE . "/etc/postfix/postscreen_spf_whitelist.cidr";
+	if ($status == 'on') {
+		//save file
+		$postwhite_domains = preg_replace("/\s+/"," ",$domains);
+		include("/usr/local/pkg/postfix_postwhite.template");
+		$postwhite_conf_file=POSTFIX_LOCALBASE . "/etc/postwhite.conf";
+               file_put_contents("{$postwhite_conf_file}.tmp",$postwhite_conf , LOCK_EX);
+               $new_md5=md5_file("{$postwhite_conf_file}.tmp");
+               if (file_exists($postwhite_conf_file)) {
+                        $current_md5=md5_file($postwhite_conf_file);
+                }
+
+               $config_file_changed = 0;
+               if ($new_md5 != $current_md5) {
+                       rename("{$postwhite_conf_file}.tmp",$postwhite_conf_file);
+                       $config_file_changed = 1;
+               }
+
+		//check if resulting acl from script exist
+		if (! file_exists($postwhite_acl_file) || $config_file_changed == 1) {
+			mwexec_bg("/usr/local/bin/postwhite");
+		}
+
+		//return parcial postscreen whitelist file
+		return (",\n\t\t\tcidr:" . POSTFIX_LOCALBASE . "/etc/postfix/postscreen_spf_whitelist.cidr");
+	} else {
+		//return parcial postscreen whitelist file
+		return("");
 	}
 }
 
@@ -249,23 +409,25 @@ function sync_package_postfix($via_rpc = "no") {
 	}
 
 	// check patch in /etc/inc/config.
-	$relay_domains = "";
-	$transport = "";
+	$relay_domains = "antispam.local ";
+	$transport =  px_check_sa_learn('transport');
 	$postfix_config=$config['installedpackages']['postfix']['config'][0];
-	if (is_array($config['installedpackages']['postfixdomains'])) {
-		$postfix_domains=$config['installedpackages']['postfixdomains']['config'][0];
+	if (is_array($config['installedpackages']['postfixdomainsng'])) {
+		$postfix_domains=$config['installedpackages']['postfixdomainsng']['config'];
 	}
 	$message_size_limit = ($postfix_config['message_size_limit'] ? $postfix_config['message_size_limit'] : "10240000");
 	$process_limit = ($postfix_config['process_limit'] ? $postfix_config['process_limit'] : "100");
-	if (is_array($postfix_domains['row'])) {
-		foreach ($postfix_domains['row'] as $postfix_row) {
+	if (is_array($postfix_domains)) {
+		foreach ($postfix_domains as $postfix_row) {
 			$relay_domains .= ' ' . $postfix_row['domain'];
 			if (!empty($postfix_row['mailserverip'])) {
-				$transport .= $postfix_row['domain'] . " smtp:[" . $postfix_row['mailserverip'] . "]\n";
+				  list($t_ip, $t_port) = explode(":", $postfix_row['mailserverip']);
+				  $t_port = (is_numeric($t_port) ? $t_port : 25);
+                                  $transport .= $postfix_row['domain'] . " smtp:[" . $t_ip . "]:" . "$t_port\n";
 			}
 		}
 	}
-	
+
 	// check cron
 	check_cron();
 
@@ -308,7 +470,7 @@ function sync_package_postfix($via_rpc = "no") {
             system_syslogd_start();
                 }
 
-	
+
 	#check_debug
 	if ($postfix_config['debug_list'] && $postfix_config['debug_list'] != "") {
 	$check_debug  = "\n#Debugging postfix\n";
@@ -317,11 +479,12 @@ function sync_package_postfix($via_rpc = "no") {
 	}
 	#check relay recipients
 	$all_relay_recipients = sync_relay_recipients('gui');
-	$dkim_config=check_dkim_config();
+	$milter_config=check_dkim_config();
+	$aliases=px_check_sa_learn('main');
 	$copyright = <<<ABOUT
 #Part of the Postfix package for pfSense
 #Copyright (C) 2010 Erik Fonnesbeck
-#Copyright (C) 2011-2016 Marcello Coutinho
+#Copyright (C) 2011-2017 Marcello Coutinho
 #All rights reserved.
 #DO NOT EDIT THIS FILE
 
@@ -338,6 +501,8 @@ access_map_defer_code = 451
 unverified_recipient_reject_code = 550
 unknown_client_reject_code = 550
 unknown_hostname_reject_code = 550
+{$aliases}
+{$milter_config}
 
 EOF;
 	// Header Maps
@@ -345,36 +510,36 @@ EOF;
 	if ($config['installedpackages']['postfixacl']['config'][0]['mynetworks']) {
 		$mynetworks = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['mynetworks']);
 	}
-	
+
 	// Header Maps
 	if ($config['installedpackages']['postfixacl']['config'][0]['header_maps']) {
 		$postfix_main .= "header_checks = pcre:".POSTFIX_LOCALBASE."/etc/postfix/header_check\n";
 		$postfix_main .= "header_size_limit = 1024000\n";
 		$header_check = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['header_maps']);
 	}
-	
+
 	// Helo Maps
 	if ($config['installedpackages']['postfixacl']['config'][0]['helo_maps']) {
 		$helo_check = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['helo_maps']);
 	}
-	
+
 	// Sender access
 	if ($config['installedpackages']['postfixacl']['config'][0]['sender_access']) {
 		$sender_access = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['sender_access']);
 	}
-	
+
 	// MIME Maps
 	if ($config['installedpackages']['postfixacl']['config'][0]['mime_maps']) {
 		$postfix_main .= "mime_header_checks = pcre:".POSTFIX_LOCALBASE."/etc/postfix/mime_check\n";
 		$mime_check = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['mime_maps']);
 	}
-	
+
 	// Body Maps
 	if ($config['installedpackages']['postfixacl']['config'][0]['body_maps']) {
 		$postfix_main .= "body_checks = pcre:".POSTFIX_LOCALBASE."/etc/postfix/body_check\n";
 		$body_check = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['body_maps']);
 	}
-	
+
 	// Client CIDR
 	if ($config['installedpackages']['postfixacl']['config'][0]['cal_cidr']) {
 		if ($antispam['zombie_blocker']=='disabled') {
@@ -385,23 +550,30 @@ EOF;
 			$cal_cidr = preg_replace('/ ok/i'," permit",$cal_cidr_tmp);
 		}
 	}
-	
+
 	// Client PCRE
 	if ($config['installedpackages']['postfixacl']['config'][0]['cal_pcre']) {
 		$cal_pcre = px_text_area_decode($config['installedpackages']['postfixacl']['config'][0]['cal_pcre']);
 	}
+	$mydomain = px_check_sa_learn('mydomain');
+	$mydestination = px_check_sa_learn('mydestination');
 	$postfix_main .= px_text_area_decode($postfix_config['maincf'])."\n".
 		"relay_domains ={$relay_domains}\n" .
-		"transport_maps = hash:".POSTFIX_LOCALBASE."/etc/postfix/transport\n" .
-		"local_recipient_maps =\n" .
-		$all_relay_recipients.
-		"mydestination =\n" .
+		"transport_maps = hash:".POSTFIX_LOCALBASE . "/etc/postfix/transport\n" .
+		"local_recipient_maps = hash:" . POSTFIX_LOCALBASE . "/etc/postfix/local_recipients\n" .
+		$all_relay_recipients .
+		"{$mydomain}" .
+		"mydestination = {$mydestination}\n" .
 		"mynetworks_style = host\n" .
 		"message_size_limit = {$message_size_limit}\n" .
 		"default_process_limit = {$process_limit}\n";
-	
+
 	//assign antispam options
+	$check_policy_service="inet:127.0.0.1:10045,\n\t\t\t\t";
 	$antispam = $config['installedpackages']['postfixantispam']['config'][0];
+
+	//postfwd configuration
+	list($postfwd_before, $postfwd_after) = postfix_check_postfwd($antispam['postfwd_enabled'],$antispam['postfwd_position'],$antispam['postfwd_rules']);
 
 	if ($antispam['antispam_enabled']) {
 		switch ($antispam['antispam_software']) {
@@ -433,8 +605,9 @@ EOF;
 	if ($antispam['reject_unknown_helo_hostname']) {
 		$reject_unknown_helo_hostname = <<<EOF
 smtpd_helo_restrictions = check_helo_access pcre:{$pf_dir}/etc/postfix/helo_check,
-				reject_unknown_helo_hostname,
-				reject_invalid_helo_hostname,
+				warn_if_reject reject_invalid_helo_hostname,
+				warn_if_reject reject_unknown_client_hostname,
+				reject_unknown_reverse_client_hostname,
 				reject_non_fqdn_helo_hostname,
 				permit
 
@@ -468,10 +641,10 @@ smtpd_client_restrictions = permit_mynetworks,
 				reject_multi_recipient_bounce,
 				permit
 
-smtpd_recipient_restrictions = permit_mynetworks,
+smtpd_recipient_restrictions = {$postfwd_before}permit_mynetworks,{$postfwd_after}
 				reject_unauth_destination,
 				reject_unauth_pipelining,
-				check_client_access pcre:{$pf_dir}/etc/postfix/cal_pcre,
+				SPFSPFSPFcheck_client_access pcre:{$pf_dir}/etc/postfix/cal_pcre,
 				check_client_access cidr:{$pf_dir}/etc/postfix/cal_cidr,
 				check_sender_access hash:{$pf_dir}/etc/postfix/sender_access,
 				reject_non_fqdn_helo_hostname,
@@ -479,7 +652,7 @@ smtpd_recipient_restrictions = permit_mynetworks,
 				reject_non_fqdn_recipient,
 				reject_multi_recipient_bounce,
 				reject_unverified_recipient,
-				SPFSPFSPFRBLRBLRBL
+				RBLRBLRBL
 
 EOF;
 	} else {
@@ -513,19 +686,41 @@ smtpd_recipient_restrictions = permit_mynetworks,
 
 EOF;
 	}
-#check spf option
+	#check spf option
+	$spf_helo_reject="No_Check";
+	$spf_mail_reject="False";
 	switch ($antispam['postfix_spf']) {
-		case 'spf_mark_only':
-			$postfix_main.= "spf_mark_only = yes\n";
-			$spf = "reject_spf_invalid_sender,\n\t\t\t\t";
-			break;
-		case 'disable':
-			$spf = "";
-			break;
-		default:
-			$spf=$antispam['postfix_spf'].",\n\t\t\t\t";
-			break;
+		case '':
+        	case 'disable':
+        	case 'No_Check':
+                	$spf="";
+                	$spf_helo_reject="No_Check";
+                	break;
+        	default:
+                	$spf_helo_reject=$antispam['postfix_spf'];
+                	//$postfix_main.= "spf-policy_time_limit = 3600\n";
+                	$spf="check_policy_service unix:private/spf-policy,\n\t\t\t\t";
+                	break;
 	}
+
+	switch($antispam['postfix_spf_mail']){
+        	case '':
+        	case 'disable':
+        	case 'No_Check':
+                	$spf="";
+                	$spf_mail_reject="No_Check";
+                	break;
+        	default:
+                	$spf_mail_reject=$antispam['postfix_spf_mail'];
+                	//$postfix_main.= "spf-policy_time_limit = 3600\n";
+                	$spf="check_policy_service unix:private/spf-policy,\n\t\t\t\t";
+                	break;
+	}
+
+	if ($antispam['postfix_spf_skip'] != "") {
+		$spf_skip = ",{$antispam['postfix_spf_skip']}";
+	}
+
 	$postfix_main  = preg_replace("/SPFSPFSPF/",$spf,$postfix_main);
 	$postfix_main .= $postfix_main_antispam.$check_debug;
 	switch ($antispam['zombie_blocker']) {
@@ -593,27 +788,21 @@ EOF;
 		if (preg_match("/postscreen_greet_check/",$antispam['after_greeting'])) {
 			$postfix_main .= "postscreen_greet_action = ".$antispam['zombie_blocker']."\n";
 		}
-	
-		$postfix_main .= "postscreen_access_list = permit_mynetworks,\n\t\t\tcidr:".POSTFIX_LOCALBASE."/etc/postfix/cal_cidr\n";
+		$postfix_main .= "postscreen_access_list = permit_mynetworks,\n\t\t\tcidr:".POSTFIX_LOCALBASE."/etc/postfix/cal_cidr";
+		$postfix_main .= postfix_check_postwhite($antispam['postwhite'],$antispam['postwhite_list']);
+		$postfix_main .= postfix_check_autowhitelist($antispam['auto_whitelist']);
 		$postfix_main .= "postscreen_dnsbl_action= ".$antispam['zombie_blocker']."\n";
 		$postfix_main .= "postscreen_blacklist_action= ".$antispam['zombie_blocker']."\n";
 
-		//postscreen interface loop
-		//$ifaces = ($postfix_config['enabled_interface'] ? $postfix_config['enabled_interface'] : 'wan');
-		//$real_ifaces = array();
-		//$postfix_master="";
-		//foreach (explode(",", $ifaces) as $i => $iface) {
-		//	$real_ifaces[] = px_get_real_interface_address($iface);
-		//	if ($real_ifaces[$i][0]) {
-		//		$postfix_master .=$real_ifaces[$i][0].":25	inet  n       -       n       -       1       postscreen\n\t-o user=postfix\n";
-		$postfix_master  = "smtp	inet  n       -       n       -       1       postscreen\n\t-o user=postfix\n";
+		$postfix_master=  px_check_sa_learn('master');
+		$postfix_master  .= "smtp	inet  n       -       n       -       1       postscreen\n\t-o user=postfix\n";
 		$postfix_master .= ($antispam['soft_bounce'] == "postscreen" ? "\t-o soft_bounce=yes\n" : "");
-		//	}
-		//}
 		$postfix_master .= $postfix_inets.<<<MASTEREOF
 smtpd     pass  -       -       n       -       -       smtpd
 dnsblog   unix  -       -       n       -       0       dnsblog
 tlsproxy  unix  -       -       n       -       0       tlsproxy
+spf-policy unix -       n       n       -       0       spawn
+          user=nobody argv=/usr/local/bin/policyd-spf
 
 MASTEREOF;
 		$rbl2 = "";
@@ -681,9 +870,26 @@ scache    unix  -       -       n       -       1       scache
 
 MASTEREOF2;
 
-	conf_mount_rw();
+$policyd_spf = <<<SPF
+#  /usr/local/etc/postfix-policyd-spf-python/policyd-spf.conf
+#  For a fully commented sample config file see policyd-spf.conf.commented
+# or http://www.filewatcher.com/p/postfix-policyd-spf-python_1.0-2_all.deb.37100/usr/share/doc/postfix-policyd-spf-python/policyd-spf.conf.commented.html
+
+debugLevel = {$antispam['postfix_spf_debug']}
+defaultSeedOnly = 1
+
+HELO_reject = {$spf_helo_reject}
+Mail_From_reject = {$spf_mail_reject}
+skip_addresses = 127.0.0.0/8,::ffff:127.0.0.0/104,::1{$spf_skip}
+
+SPF;
+
+	if ($antispam['postfix_spf_white'] != "") {
+		$policyd_spf .= "Whitelist = {$antispam['postfix_spf_white']}\n";
+	}
 
 	log_error("Writing out configuration");
+	file_put_contents(POSTFIX_LOCALBASE."/etc/postfix-policyd-spf-python/policyd-spf.conf", $policyd_spf,LOCK_EX);
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/main.cf", $postfix_main, LOCK_EX);
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/master.cf", $postfix_master, LOCK_EX);
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/transport", $transport, LOCK_EX);
@@ -695,9 +901,18 @@ MASTEREOF2;
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/mime_check", $mime_check, LOCK_EX);
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/body_check", $body_check, LOCK_EX);
 	file_put_contents(POSTFIX_LOCALBASE . "/etc/postfix/mynetwork_table", $mynetworks, LOCK_EX);
-	$FILES = array("transport","sender_access");
+
+	$virtual_domains_content  = px_check_sa_learn('virtual');
+        file_put_contents(POSTFIX_LOCALBASE."/etc/postfix/virtual_alias_maps",$virtual_domains_content,LOCK_EX);
+
+	$local_recipients = px_check_sa_learn('recipients');
+	file_put_contents(POSTFIX_LOCALBASE."/etc/postfix/local_recipients",$local_recipients,LOCK_EX);
+
+	$FILES = array("transport","sender_access","local_recipients","virtual_alias_maps");
 	foreach ($FILES as $file) {
-		mwexec(POSTFIX_LOCALBASE."/sbin/postmap ".POSTFIX_LOCALBASE."/etc/postfix/".$file);
+		if (file_exists(POSTFIX_LOCALBASE."/etc/postfix/".$file)) {
+			mwexec(POSTFIX_LOCALBASE."/sbin/postmap ".POSTFIX_LOCALBASE."/etc/postfix/".$file);
+		}
 	}
 
 	#check postix dirs
@@ -714,14 +929,15 @@ MASTEREOF2;
 		chown($dir, 'postfix');
 		chgrp($dir, 'postfix');
 	}
-	if (!file_exists("/etc/mail/aliases")) {
-		touch("/etc/mail/aliases");
-	}
+
+	$aliases_content  = px_check_sa_learn('aliases');
+	file_put_contents(POSTFIX_LOCALBASE."/etc/postfix/aliases",$aliases_content,LOCK_EX);
+
 	if (!file_exists("/etc/aliases")) {
-		@symlink("/etc/mail/aliases", "/etc/aliases");
+		@symlink("/usr/local/etc/postfix/aliases", "/etc/aliases");
 	}
 	exec("/usr/local/bin/newaliases");
-	postfix_start();
+	mark_subsystem_dirty('postfix');
 
 	//Do not sync during boot
 	if (!isset($boot_process) || $via_rpc == "yes") {
@@ -730,10 +946,10 @@ MASTEREOF2;
 
 }
 function postfix_start() {
-	global $config;
+	global $config , $savemsg_array;
 	$pf_dir = POSTFIX_LOCALBASE;
 	$pf_start_cmd = "{$pf_dir}/sbin/postfix start";
-	
+
 	$start = <<<EOF
 
 	sysctl kern.ipc.nmbclusters=65536
@@ -759,7 +975,21 @@ EOF;
 		mwexec("/usr/local/etc/rc.d/postfix.sh stop");
 		system('/bin/chmod -x /usr/local/etc/rc.d/postfix.sh');
 	}
-	conf_mount_ro();
+
+	if (is_array($config['installedpackages']['postfixantispam'])) {
+                $cfg = $config['installedpackages']['postfixantispam']['config'][0];
+		// check dkim service
+		check_dkim_service($cfg);
+
+		// check dmarc service
+		check_dmarc_service($cfg);
+
+		// check postfwd service
+		postfix_check_postfwd_service($cfg);
+
+		// check postwhite list	
+        }
+	clear_subsystem_dirty('postfix');
 }
 
 function postfix_validate_input($post, &$input_errors) {
@@ -787,11 +1017,12 @@ function postfix_validate_input($post, &$input_errors) {
 				$input_errors[] = "{$value} is not a valid domain name.";
 			}
 		} else if (substr($key, 0, 12) == "mailserverip" && is_numeric(substr($key, 12))) {
+			list($t_ip, $t_port) = explode(":", $value);
 			if (empty($post['domain' . substr($key, 12)])) {
 				$input_errors[] = "Domain for {$value} cannot be blank.";
 			}
-			if (!is_ipaddr($value) && !is_hostname($value)) {
-				$input_errors[] = "{$value} is not a valid IP address or host name.";
+			if (!is_ipaddr($t_ip) && !is_hostname($t_ip)) {
+				$input_errors[] = "{$t_ip} is not a valid IP address or host name.";
 			}
 		}
 	}
@@ -809,10 +1040,8 @@ function postfix_php_deinstall_command() {
 	}
 	write_config();
 	sync_package_postfix();
-	conf_mount_rw();
 	unlink_if_exists("/usr/local/etc/rc.d/postfix.sh");
 	unlink_if_exists("/etc/aliases");
-	conf_mount_ro();
 }
 
 /* Uses XMLRPC to synchronize the changes to a remote node */
@@ -921,7 +1150,7 @@ function postfix_do_xmlrpc_sync($sync_to_ip, $port, $protocol, $username, $passw
 	/* XML will hold the sections to sync. */
 	$xml = array();
 	$xml['postfix'] = $config['installedpackages']['postfix'];
-	$xml['postfixdomains'] = $config['installedpackages']['postfixdomains'];
+	$xml['postfixdomainsng'] = $config['installedpackages']['postfixdomainsng'];
 	$xml['postfixacl'] = $config['installedpackages']['postfixacl'];
 	$xml['postfixrecipients'] = $config['installedpackages']['postfixrecipients'];
 	$xml['postfixantispam'] = $config['installedpackages']['postfixantispam'];

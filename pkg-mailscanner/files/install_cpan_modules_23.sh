@@ -30,7 +30,17 @@ if [ ! -f /usr/bin/cc ] ;then
  tar -xvzf mk.tar.gz -C /
 fi
 
+# Enable freebsd Repo
+repo_dir=/root/repo.bkp
+mkdir -p $repo_dir
+rm -f $repo_dir/*conf
+cp /usr/local/etc/pkg/repos/*conf $repo_dir
+sed -i "" -E "s/(FreeBSD.*enabled:) no/\1 yes/" /usr/local/etc/pkg/repos/*conf
+
 pkg install gcc
+
+# restore repository configuration state
+cp $repo_dir/*conf /usr/local/etc/pkg/repos/.
 
 rehash
 
@@ -40,5 +50,12 @@ cpan -f -i Razor2::Client::Agent
 cpan -f -i Geo::IP
 cpan -f -i Net::Patricia
 cpan -f -i LWP::UserAgent
+cpan -f -i Net::Server::Daemonize
+cpan -f -i Net::Server::Multiplex
+cpan -f -i IO::Multiplex
+cpan -f -i Net::Server::PreFork
+cpan -f -i Net::DNS
+cpan -f -i Time::HiRes
+cpan -f -i Storable
 
 fi

@@ -1,0 +1,8 @@
+pkg/tinyproxy.xml
+pkg/tinyproxy.inc
+pkg/pkg_tinyproxy.inc
+pkg/tinyproxy_sync.xml
+pkg/tinyproxy.template
+/etc/inc/priv/tinyproxy.priv.inc
+%%DATADIR%%/info.xml
+@dir /etc/inc/priv

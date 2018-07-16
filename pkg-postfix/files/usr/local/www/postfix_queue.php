@@ -103,7 +103,7 @@ if ($_REQUEST['cmd']!=""){
 			if (preg_match("/\s+(T\s.*)/",$line,$matches)){
 		                $dbc=explode (" ",preg_replace("/\s+/"," ",$matches[1]));
 				$tss=array('thead','tfoot');
-				
+
                 		foreach ($tss as $t){
                         		$$t = "<" . $t . "><tr><th></th>\n";
                         			foreach ($dbc as $c){
@@ -117,7 +117,7 @@ if ($_REQUEST['cmd']!=""){
 				print "<tr>";
 				foreach (explode (" ",preg_replace("/\s+/"," ",$matches[1])) as $count)
 					print "<th>{$count}</th>";
-				print "</tr>";	
+				print "</tr>";
 				*/
 			}
 			else{
@@ -174,7 +174,7 @@ include("head.inc");
 	<?php
 		$tab_array = array();
 		$tab_array[] = array(gettext("General"), false, "/pkg_edit.php?xml=postfix.xml&id=0");
-		$tab_array[] = array(gettext("Domains"), false, "/pkg_edit.php?xml=postfix_domains.xml&id=0");
+		$tab_array[] = array(gettext("Domains"), false, "/pkg.php?xml=postfix_domains.xml");
 		$tab_array[] = array(gettext("Recipients"), false, "/pkg_edit.php?xml=postfix_recipients.xml&id=0");
 		$tab_array[] = array(gettext("Access Lists"), false, "/pkg_edit.php?xml=postfix_acl.xml&id=0");
 		$tab_array[] = array(gettext("Antispam"), false, "/pkg_edit.php?xml=postfix_antispam.xml&id=0");
@@ -209,7 +209,7 @@ include("head.inc");
 			</span>
 			</td>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("update frequency: ");?></td>
                         <td width="78%" class="vtable">
@@ -226,7 +226,7 @@ include("head.inc");
 			</span>
 			</td>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("qshape Report flags: ");?></td>
                         <td width="78%" class="vtable">
@@ -243,7 +243,7 @@ include("head.inc");
 			</span>
 			</td>
 			</tr>
-			
+
 			<tr>
                         <td width="22%" valign="top" class="vncell"><?=gettext("qshape Report type: ");?></td>
                         <td width="78%" class="vtable">
@@ -265,7 +265,7 @@ include("head.inc");
 			</div>
 			</td>
 			</tr>
-			
+
 			</table>
 			<br>
 				<div>
@@ -294,7 +294,7 @@ include("head.inc");
 			if ($('#run').val()=="running..." && loop!= 'running'){
 			$('#updatef').val(1);
 			$('#run').val("show queue");
-			
+
 			}
 			if ($('#run').val()=="show queue" || loop== 'running'){
 				$('#run').val("running...");

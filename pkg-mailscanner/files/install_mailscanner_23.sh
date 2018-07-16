@@ -33,31 +33,94 @@ fetch -q -o /root/$check_service_file $prefix/$check_service_file
 for file in 	www/mailscanner_about.php pkg/mailscanner.conf.template pkg/mailscanner.xml pkg/mailscanner_antispam.xml \
 		pkg/mailscanner_attachments.xml pkg/mailscanner_report.xml pkg/mailscanner.inc pkg/mailscanner_alerts.xml \
 		pkg/mailscanner_antivirus.xml pkg/mailscanner_content.xml pkg/mailscanner_sync.xml \
-		www/shortcuts/pkg_mailscanner.inc
+		www/shortcuts/pkg_mailscanner.inc bin/sa-updater-custom-channels.sh bin/sa-wrapper.pl
 do
 	echo "fetching  /usr/local/$file from github"
 	fetch -q -o /usr/local/$file $prefix/usr/local/$file
 done
 
 # Enable freebsd Repo
-repo1=/usr/local/etc/pkg/repos/FreeBSD.conf
-repo2=/usr/local/etc/pkg/repos/pfSense.conf
-cp $repo1 /root/FreeBSD.bkp.conf
-echo "FreeBSD: { enabled: yes  }" > $repo1
+repo_dir=/root/repo.bkp
+mkdir -p $repo_dir
+rm -f $repo_dir/*conf
+cp /usr/local/etc/pkg/repos/*conf $repo_dir
+sed -i "" -E "s/(FreeBSD.*enabled:) no/\1 yes/" /usr/local/etc/pkg/repos/*conf
 
-cp $repo2 /root/pfSense.bkp.conf
-cp /usr/local/etc/pkg/repos/pfSense.conf /root/pfSense.bkp.conf
-cat $repo2 | sed "s/enabled: no/enabled: yes/" > /tmp/pfSense.conf &&
-cp /tmp/pfSense.conf $repo2
+#fix permission
+chmod +x /usr/local/bin/sa-updater-custom-channels.sh
+chmod +x /usr/local/bin/sa-wrapper.pl
 
 # Install mailscanner package
-pkg install mailscanner bash dcc-dccd spamassassin
+# pkg lock pkg
+pkg update
+pkg install mailscanner bash dcc-dccd spamassassin p7zip rsync
+
+# restore repository configuration state
+cp $repo_dir/*conf /usr/local/etc/pkg/repos/.
 
 #install services and menus
 php /root/check_mailscanner_service.php
+
+#install spamassassin-extremeshok_fromreplyto
+plugin_dir=/usr/local/etc/mail/spamassassin
+plugin_file=extremeshok_fromreplyto.zip
+
+if [ ! -d $plugin_dir/plugins ];then
+	mkdir -p $plugin_dir/plugins
+fi
+
+cd root
+
+fetch -o $plugin_file https://github.com/extremeshok/spamassassin-extremeshok_fromreplyto/archive/master.zip
+unzip -o $plugin_file
+cp spamassassin-extremeshok_fromreplyto-master/plugins/*pm $plugin_dir/plugins/
+cp spamassassin-extremeshok_fromreplyto-master/01_extremeshok_fromreplyto.cf $plugin_dir
+
+#install shorturl mailscanner plugin
+plugin_file=DecodeShortURLs.zip
+fetch -o $plugin_file https://github.com/smfreegard/DecodeShortURLs/archive/master.zip
+unzip -o $plugin_file
+cp DecodeShortURLs-master/*pm $plugin_dir
+cp DecodeShortURLs-master/*cf $plugin_dir
+
+#install 7z and pdf patch
+plugin_file=pdfid.zip 
+fetch -o $plugin_file http://didierstevens.com/files/software/pdfid_v0_2_1.zip
+unzip -o $plugin_file
+cp p*py /usr/local/bin/
+chmod +x /usr/local/bin/p*py
+#fix python path
+sed -i '.bak' "s@/usr/bin/env python@/usr/local/bin/python2@" /usr/local/bin/p*.py
+
+#install unofficial sigs for improving malware protection
+plugin_file=clamav-unofficial-sigs.zip
+fetch -o $plugin_file https://github.com/extremeshok/clamav-unofficial-sigs/archive/master.zip
+unzip -o $plugin_file
+script_file=/usr/local/sbin/clamav-unofficial-sigs.sh
+plugin_dir=clamav-unofficial-sigs
+cp ${plugin_dir}-master/clamav-unofficial-sigs.sh $script_file
+
+chmod +x $script_file
+sed -i '.bak' "s@!/bin/bash@!/usr/local/bin/bash@" $script_file
+for c_dir in /etc/$plugin_dir/ /var/log/$plugin_dir/
+do
+        if [ ! -d $c_dir ];then
+                mkdir $c_dir
+        fi
+done
+cp ${plugin_dir}-master/config/* /etc/$plugin_dir
+cp /etc/$plugin_dir/os.pfsense.conf /etc/$plugin_dir/os.conf
+sed -i '.bak' 's@clam_user=.*@clam_user="postfix"@' /etc/$plugin_dir/os.conf
+sed -i '.bak' 's@#user_configuration.*@user_configuration_complete="yes"@' /etc/$plugin_dir/user.conf
 
 # update spamassassin database
 rehash
 /usr/local/bin/sa-update -D
 
 fi
+
+for PatchFile in ConfigDefs.pl.patch Message.pm.patch SweepContent.pm.patch
+  do
+  fetch -o - -q $prefix/$PatchFile | patch -N -b -p0
+  done
+

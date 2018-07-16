@@ -28,9 +28,10 @@ require_once("service-utils.inc");
 
 $uname=posix_uname();
 if ($uname['machine']=='amd64')
-        ini_set('memory_limit', '250M');
+        ini_set('memory_limit', '512M');
 
-$dbc=array('bounced','deferred','hold','incoming','reject','spam','sent');
+//$dbc=array('bounced','deferred','hold','incoming','reject','spam','sent','total');
+$dbc=array('bounced','deferred','reject','spam','sent','total');
 
 function open_table($thead=""){
 	echo "<table border=1 class='table table-striped table-hover table-condensed'>\n";
@@ -88,14 +89,24 @@ global $config;
 
 
 $size=$config['installedpackages']['postfix']['config'][0]['widget_size'];
-if (preg_match('/\d+/',$config['installedpackages']['postfix']['config'][0]['widget_days']))
-	$days=$config['installedpackages']['postfix']['config'][0]['widget_days'] * -1;
-else
+$days=$config['installedpackages']['postfix']['config'][0]['widget_days'];
+$dbc_list=$config['installedpackages']['postfix']['config'][0]['widget_fields'];
+
+if (preg_match ('/\w+/',$dbc_list)) {
+	$dbc=explode(",",$dbc_list);
+} else {
+	$dbc=array('bounced','deferred','reject','spam','sent','total');
+}
+if (preg_match('/\d+/',$days)) {
+	$days=$days * -1;
+} else {
 	$days=-3;
-if (preg_match('/\d+/',$config['installedpackages']['postfix']['config'][0]['widget_size']))
-	$size=$config['installedpackages']['postfix']['config'][0]['widget_size'];
-else
+}
+
+if (!preg_match('/\d+/',$size)) {
 	$size='100000000';#100mb
+}
+
 
 $postfix_dir="/var/db/postfix/";
 $curr_time = time();
@@ -109,27 +120,35 @@ if ($z==0) {
 }
 
 if (file_exists($postfix_dir.'/'.$postfix_db.".db")) {
-	#noqueue
 	if (@filesize($postfix_dir.'/'.$postfix_db.".db")< $size) {
+		//noqueue
 		$stm="select count(*) as total from mail_noqueue";
 		$row_noqueue = postfix_read_db($stm,$postfix_db.".db");
+		$total=0;
 
 		//queue
 		$stm="select mail_status.info as status,count(*) as total from mail_to,mail_status where mail_to.status=mail_status.id group by status order by mail_status.info";
 		$result = postfix_read_db($stm,$postfix_db.".db");
+
+		//status count
 		foreach($dbc as $sc) {
-		$c[$sc]=0; //status count
-		}
+			$c[$sc]=0;
+			}
+		$c['reject'] = $row_noqueue[0]['total'];
+		$c['total'] = $c['reject'];
 		foreach($result as $i => $row) {
 			if (is_array($row)) {
 				if (preg_match("/\w+/",$row['status'])) {
-					$c[$row['status']] = $row['total'];
-				 	if ($row['status']=="reject") {
-						$c[$row['status']]=+$row_noqueue[0]['total']; 
-				 	}
+					$c['total'] = $c['total'] + $row['total'];
+				 	if ($row['status'] == 'reject') {
+						$c['reject'] = $c['reject'] + $row['total'];
+				 	} else {
+						$c[$row['status']] = $row['total'];
+					}
 				 }
 			}
 		}
+
 		if(count($result) > 0) {
 			if ($head_count==0) {
 				open_table_header();
@@ -137,7 +156,12 @@ if (file_exists($postfix_dir.'/'.$postfix_db.".db")) {
 			}
 			echo"<tr><th style='text-align:center;'>{$postfix_db}</th>";
 			foreach($dbc as $sc) {
-				echo "<th style='text-align:right;'>" . number_format($c[$sc],0,"",".") . "</th>\n";
+				if ($sc == 'total') {
+					$s_link="";
+				} else {
+					$s_link="href='/postfix_search.php?widget={$postfix_db},{$sc}' target='_blank'";
+				}
+				echo "<th style='text-align:right;'><a {$s_link}>" . number_format($c[$sc],0,"",".") . "</a></th>\n";
 			}
 			print "</tr>";
 		}

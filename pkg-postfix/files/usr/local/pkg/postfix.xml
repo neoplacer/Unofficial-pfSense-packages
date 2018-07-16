@@ -65,7 +65,7 @@
 		</tab>
 		<tab>
 			<text>Domains</text>
-			<url>/pkg_edit.php?xml=postfix_domains.xml&amp;id=0</url>
+			<url>/pkg.php?xml=postfix_domains.xml</url>
 		</tab>
 		<tab>
 			<text>Recipients</text>
@@ -192,7 +192,7 @@
 								  To use <strong>Diagnostics -> Search mail</strong> you need to:<br>
 								  Select Loggin Destination to /var/log/maillog<br>
 								  Select update Sqlite frequency<br>
-								  Inlcude <strong>/^Subject:/ WARN</strong> line in Acl Headers after all your Subject rules.]]></description>
+								  Inlcude <strong>/^Subject:/ INFO</strong> line in Acl Headers after all your Subject rules.]]></description>
 	    	<type>select</type>
  				<options>
  				<option><name>Every minute</name><value>01min</value></option>
@@ -225,7 +225,52 @@
 				<option><name>6</name><value>6</value></option>
 				</options>
 		</field>
-
+		<field>
+                        <name>Reporting options</name>
+                        <type>listtopic</type>
+                </field>
+                <field>
+                        <fielddescr>Stats Reporting</fielddescr>
+                        <fieldname>report_status</fieldname>
+                        <type>checkbox</type>
+                        <description>Enable e-mail stats Reporting.(This requires mailreport package installed)</description>
+                </field>
+                 <field>
+                        <fielddescr>Frequency</fielddescr>
+                        <fieldname>report_frequency</fieldname>
+                        <type>select</type>
+                                <options>
+                                <option><name>Daily</name><value>daily</value></option>
+                                <option><name>Weekly</name><value>weekly</value></option>
+                                </options>
+                        <description>How often send the reports.</description>
+                        <multiple/>
+                        <size>2</size>
+                </field>
+                <field>
+                        <fielddescr>Sender</fielddescr>
+                        <fieldname>report_from</fieldname>
+                        <type>input</type>
+                        <size>35</size>
+                        <description>Report From address</description>
+                </field>
+                <field>
+                        <fielddescr>Destinations</fielddescr>
+                        <fieldname>report_destination</fieldname>
+                        <type>textarea</type>
+                        <cols>40</cols>
+                        <rows>3</rows>
+                        <encoding>base64</encoding>
+                        <description>
+                                Send Email report to these e-mail address(es). One per line.
+                        </description>
+                </field>
+                <field>
+                        <fielddescr>Attach raw log</fielddescr>
+                        <fieldname>report_attachment</fieldname>
+                        <type>checkbox</type>
+                        <description>Include raw data log as attachment</description>
+                </field>
 		<field>
 			<name>Widget options</name>
 			<type>listtopic</type>
@@ -253,6 +298,24 @@
 				The maximun size in bytes sqlite file we get stats. Default is 100000000 (100mb).
 			</description>
 		</field>
+		 <field>
+                        <fielddescr>Widget Columns</fielddescr>
+                        <fieldname>widget_fields</fieldname>
+			<multiple/>
+			<size>8</size>
+                        <type>select</type>
+                                <options>
+                                <option><name>Bounced - Permanent deliver/accept error on message</name><value>bounced</value></option>
+                                <option><name>Deferred - Temporary deliver/accept error on message</name><value>deferred</value></option>
+                                <option><name>Hold - Message on mailscanner queue</name><value>hold</value></option>
+                                <option><name>Incoming - Message is incoming</name><value>incoming</value></option>
+                                <option><name>Reject - Permanent reject error</name><value>reject</value></option>
+                                <option><name>Spam - Message marked as spam by third part spam tool</name><value>spam</value></option>
+                                <option><name>Sent - Message was sent</name><value>sent</value></option>
+                                <option><name>Total - Sum of all status</name><value>total</value></option>
+                                </options>
+                        <description>What to show on widget. Leave empty for default widget show options</description>
+                </field>
 	</fields>
 	<custom_php_install_command>
 		postfix_php_install_command();
@@ -266,4 +329,7 @@
 	<custom_php_resync_config_command>
 		sync_package_postfix();
 	</custom_php_resync_config_command>
+	<custom_php_command_before_form>
+                postfix_check_config();
+        </custom_php_command_before_form>
 </packagegui>

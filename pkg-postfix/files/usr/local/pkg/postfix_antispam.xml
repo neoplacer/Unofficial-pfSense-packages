@@ -34,20 +34,14 @@
 	<version>1.0</version>
 	<title>Services: Postfix relay and antispam</title>
 	<include_file>/usr/local/pkg/postfix.inc</include_file>
-	<menu>
-		<name>Postfix Antispam and mail Relay</name>
-		<tooltiptext>Configure Postfix Forwarder</tooltiptext>
-		<section>Services</section>
-		<url>pkg_edit.php?xml=postfix_antispam.xml&amp;id=0</url>
-	</menu>
-<tabs>
+	<tabs>
 		<tab>
 			<text>General</text>
 			<url>/pkg_edit.php?xml=postfix.xml&amp;id=0</url>
 		</tab>
 		<tab>
 			<text>Domains</text>
-			<url>/pkg_edit.php?xml=postfix_domains.xml&amp;id=0</url>
+			<url>/pkg.php?xml=postfix_domains.xml</url>
 		</tab>
 		<tab>
 			<text>Recipients</text>
@@ -83,7 +77,7 @@
 			<url>/postfix_about.php</url>
 		</tab>
 
-</tabs>
+	</tabs>
 	<fields>
 		<field>
 			<name>Postfix Antispam Settings</name>
@@ -106,10 +100,15 @@
 			<description><![CDATA[Default: Checked. Reject unknow helo hostname during smtp communication.]]></description>
 		</field>
 		<field>
+                        <name><![CDATA[Postscreen]]></name>
+                        <type>listtopic</type>
+                </field>
+
+		<field>
 			<fielddescr>Zombie blocker</fielddescr>
 			<fieldname>zombie_blocker</fieldname>
 			<description>
-			<![CDATA[<strong>Default: Enabled with enforce</strong><br><a target=_new href='http://www.postfix.org/POSTSCREEN_README.html'>Use postfix 2.8 Postscreen feature to detect zombie spammers</a>]]>
+			<![CDATA[<strong>Default: Enabled with enforce</strong><br><a target=_new href='http://www.postfix.org/POSTSCREEN_README.html'>Use postfix Postscreen feature to detect zombie spammers<br>and deep header check verification.</a>]]>
 			</description>
 	    	<type>select</type>
  				<options>
@@ -119,6 +118,18 @@
 				<option><name>Disabled</name><value>disabled</value></option>
 				</options>
 		</field>
+                <field>
+                        <fielddescr>Auto whitelist</fielddescr>
+                        <fieldname>auto_whitelist</fieldname>
+                        <type>select</type>
+                        <options>
+                                <option><name>0 - Disabled</name><value>0</value></option>
+                                <option><name>2</name><value>2</value></option>
+                                <option><name>4</name><value>4</value></option>
+                                <option><name>6</name><value>6</value></option>
+                        </options>
+                        <description><![CDATA[Auto whitelist cloud based domains after X different ips <b>'450 4.3.2 Service currently unavailable'</b> rejects.]]></description>
+                </field>
 		<field>
 			<fielddescr>greet wait time</fielddescr>
 			<fieldname>greet_time</fieldname>
@@ -201,6 +212,10 @@
 				</options>
 		</field>
 		<field>
+                        <name><![CDATA[SPF Lookup]]></name>
+                        <type>listtopic</type>
+                </field>
+		<field>
 			<fielddescr>SPF lookup HELO</fielddescr>
 			<fieldname>postfix_spf</fieldname>
                         <type>select</type>
@@ -208,7 +223,7 @@
                                 <option><name>SPF_Not_Pass (default) - Reject if HELO results in not Pass, None, or Temperror</name><value>SPF_Not_Pass</value></option>
                                 <option><name>SoftFail - Reject on HELO Softfail or Fail.</name><value>Softfail</value></option>
                                 <option><name>Fail - Reject only on HELO Fail.</name><value>Fail</value></option>
-                                <option><name>Null - Only reject HELO Fail for Null sender (SPF Classic)</name><value>Fail</value></option>
+                                <option><name>Null - Only reject HELO Fail for Null sender (SPF Classic)</name><value>Null</value></option>
                                 <option><name>False - Never reject on HELO, append header only</name><value>False</value></option>
                                 <option><name>No_Check - Do not check SPF records</name><value>No_Check</value></option>
                                 </options>
@@ -224,7 +239,6 @@
                                 <option><name>SPF_Not_Pass (default) - Reject if Mail From results in not Pass, None, or Temperror</name><value>SPF_Not_Pass</value></option>
                                 <option><name>SoftFail - Reject on Mail From Softfail or Fail.</name><value>Softfail</value></option>
                                 <option><name>Fail - Reject only on Mail From Fail.</name><value>Fail</value></option>
-                                <option><name>Null - Only reject Mail From Fail for Null sender (SPF Classic)</name><value>Fail</value></option>
                                 <option><name>False - Never reject on Mail From, append header only</name><value>False</value></option>
                                 <option><name>No_Check - Do not check SPF records</name><value>No_Check</value></option>
                                 </options>
@@ -232,7 +246,27 @@
                         <![CDATA[<strong>Default: Reject if result not Pass, None, or Temperror</strong><br><a target=_new href='http://www.openspf.org/Introduction'>The Sender Policy Framework (SPF) is an open standard specifying a technical method to prevent sender address forgery.</a>]]>
                         </description>
                 </field>
-
+		<field>
+                        <fielddescr>SPF skip lookup</fielddescr>
+                        <fieldname>postfix_spf_skip</fieldname>
+                        <description><![CDATA[<span>Do not check SPF for localhost addresses - add to 'skip addresses' to<br>
+                                        skip SPF for internal networks if desired. Defaults are standard IPv4 and IPv6 <br>
+                                        localhost addresses. 127.0.0.0/8,::ffff:127.0.0.0/104,::1<br>
+                                        Just add any additional local/internal networks/hosts here using coma between hosts.<br>]]>
+                        </description>
+                        <type>input</type>
+                        <size>80</size>
+                </field>
+                <field>
+                        <fielddescr>SPF Whitelist</fielddescr>
+                        <fieldname>postfix_spf_white</fieldname>
+                        <description><![CDATA[<span>Whitelist: CIDR Notation list of IP addresses not to check SPF for.<br>
+                                        example (default is no whitelist): 192.168.0.0/31,192.168.1.12<br>
+                                        Backup MX servers already doing SPF should go here<br>]]>
+                        </description>
+                        <type>input</type>
+                        <size>80</size>
+		</field>
                 <field>
                         <fielddescr>SPF Debug level</fielddescr>
                         <fieldname>postfix_spf_debug</fieldname>
@@ -246,6 +280,33 @@
                         <description>Select SPF debug level on mail log.</description>
                 </field>
                 <field>
+                        <name><![CDATA[Batch import whitelist ips to Postcreen]]></name>
+                        <type>listtopic</type>
+                </field>
+		<field>
+                        <fielddescr>Postwhite</fielddescr>
+                        <fieldname>postwhite</fieldname>
+                        <type>checkbox</type>
+                        <description><![CDATA[Check to import most cloud based SPF ips to Postscreen whitelist.]]></description>
+                </field>
+		 <field>
+                        <fielddescr>Whitelist domains</fielddescr>
+                        <fieldname>postwhite_list</fieldname>
+                        <description><![CDATA[<span>List domains(<b>one per line</b>) to Postwhite fetch published SPF records<br>
+					to generate a list of outbound mailer IP addresses and CIDR ranges to create a whitelist for 
+					Postfix's Postscreen.<br><br>
+					<b>Postwhite will scan these .com domains by default:</b><div class="infoblock blockopen">
+					<b>webmail:</b> aol, google, microsoft, outlook, hotmail, gmx, icloud, mail, inbox, zoho and fastmail.<br>
+					<b>social:</b> facebook, facebookmail, twitter, pinterest, instagram, tumblr, reddit and linkedin.<br>
+					<b>commerce:</b> craigslist, amazon, ebay and paypal.<br>
+					<b>bulk:</b> sendgrid, sendgrid, mailchimp, exacttarget, cust-spf.exacttarget, constantcontact, icontact, mailgun, fishbowl, fbmta, mailjet, sparkpost and sparkpostmail.<br>
+					<b>misc:</b> zendesk and github.</div>]]>
+                        </description>
+                        <type>textarea</type>
+                        <cols>50</cols>
+                        <rows>5</rows>
+                </field>
+                <field>
                         <name><![CDATA[Domain keys]]></name>
                         <type>listtopic</type>
                 </field>
@@ -253,9 +314,7 @@
                         <fielddescr>DKIM key lookup</fielddescr>
                         <fieldname>check_dkim</fieldname>
                         <type>checkbox</type>
-                        <description>
-                        <![CDATA[<strong>Default: Unchecked (Do not check for DKIM keys)</strong><br>]]>
-                        </description>
+                        <description><![CDATA[Default: Unchecked (Do not check for DKIM keys)]]></description>
                 </field>
                  <field>
                         <fielddescr>On Bad signature</fielddescr>
@@ -301,6 +360,101 @@
                         <size>80</size>
                 </field>
 		<field>
+                        <name><![CDATA[Rate connections(Postfwd)]]></name>
+                        <type>listtopic</type>
+                </field>
+                <field>
+                        <fielddescr>use Postfwd</fielddescr>
+                        <fieldname>postfwd_enabled</fieldname>
+                        <type>checkbox</type>
+                        <description>Enable connections trottle/rate limit</description>
+               </field>
+               <field>
+                        <fielddescr>Rule Position</fielddescr>
+                        <fieldname>postfwd_position</fieldname>
+                        <description><![CDATA[Place rules before or after my_network<br>
+                               If you select before, internal clients will be rated(this is usefull to reduce malwares that sends spams form your client's email.<br>
+                               If you select after, this will rate only ips that are not on your my_network cidr list under ACLs]]>
+                        </description>
+                	<type>select</type>
+                        <options>
+                                <option><name>Before My_networks - Incoming and outgoing mails</name><value>before</value></option>
+                                <option><name>After My_networks - Incoming mails only</name><value>after</value></option>
+                        </options>
+                </field>
+                <field>
+                        <fielddescr>Throttle rules</fielddescr>
+                        <fieldname>postfwd_rules</fieldname>
+                        <description><![CDATA[Connections rules see <a href=http://postfwd.org/ratelimits.html>postfwd.org</a> for rule documentation.<br><b>Basic rule sample to limit mail per sender</b><br>
+                               id=R001; sender=~/.*/; action=rate(sender/100/86400/REJECT only 100 messages per day for $$sender)<br>
+                               id=R002; sender=~/.*/; action=rate(sender/50/3600/REJECT only 50 messages per hour for $$sender)<br>
+                       ]]></description>
+                        <type>textarea</type>
+                       <encoding>base64</encoding>
+                        <cols>80</cols>
+                        <rows>05</rows>
+                </field>
+                <field>
+                        <name><![CDATA[Domain based Message Authentication, Reporting & Conformance]]></name>
+                        <type>listtopic</type>
+                </field>
+		<field>
+                        <fielddescr>check DMARC</fielddescr>
+                        <fieldname>dmarc_enabled</fieldname>
+                        <type>checkbox</type>
+                        <description><![CDATA[verify inbound email with DMARC]]></description>
+                </field>
+		<field>
+			<fielddescr>TrustedAuthservIDs</fielddescr>
+          		<fieldname>dmarc_trusted</fieldname>
+          		<description><![CDATA[AuthservIDs are assumed to be valid inputs for DMARC assessment.<br>
+			 This can prevent the DMARC tests from running several times if you have multiple mail servers in your organization.<br>
+			 <b>Example:</b><br>
+			mailserver1.your.domain.com<br>
+			mailserver2.your.domain.com]]></description>
+			<type>textarea</type>
+         		<encoding>base64</encoding>
+          		<cols>40</cols>
+          		<rows>05</rows>
+  		</field>
+		<field>
+                        <fielddescr>Ignore Hosts</fielddescr>
+                        <fieldname>dmarc_ignoreh</fieldname>
+                        <description><![CDATA[Ignored Hosts list. One per line]]></description>
+                        <type>textarea</type>
+                        <encoding>base64</encoding>
+                        <cols>40</cols>
+                        <rows>05</rows>
+                </field>
+		<field>
+                        <fielddescr>Ignore Mail</fielddescr>
+                        <fieldname>dmarc_ignorem</fieldname>
+                        <description><![CDATA[Ignored Mail from list. One per line]]></description>
+                        <type>textarea</type>
+                        <encoding>base64</encoding>
+                        <cols>40</cols>
+                        <rows>05</rows>
+                </field>
+		<field>
+                        <fielddescr>action</fielddescr>
+                        <fieldname>dmarc_action</fieldname>
+                        <description>What to do on DMARC failure.</description>
+                        <type>select</type>
+                        <options>
+                        <option><name>Reject Failures</name><value>true</value></option>
+                        <option><name>Append Header</name><value>false</value></option>
+                        </options>
+			<size>2</size>
+			<multiple/>
+                </field>
+		<field>
+                        <fielddescr>Failure Email</fielddescr>
+                        <fieldname>dmarc_email</fieldname>
+                        <description>Copy Failures to this email address</description>
+                        <type>input</type>
+                        <size>40</size>
+                </field>
+		<field>
 			<name><![CDATA[Third part Antispam Settings ]]></name>
 			<type>listtopic</type>
 		</field>
@@ -320,11 +474,11 @@
 								/^from:.*user@extdomain.com/ OK<br>
 								/^from:/ HOLD<br>
 								/^to:.*@mydomain.com/ HOLD]]></description>
-	    	<type>select</type>
- 				<options>
+	    		<type>select</type>
+ 			<options>
 				<option><name>Auto mode</name><value>auto</value></option>
 				<option><name>Manual mode using ACLs</name><value>manual</value></option>
-				</options>
+			</options>
 		</field>
 		<field>
 			<fielddescr>Software</fielddescr>
@@ -336,6 +490,23 @@
 				<option><name>Policyd v2 + amavis</name><value>policyd2</value></option>
 				</options>
 		</field>
+                <field>
+                        <fielddescr>Sa-Learn</fielddescr>
+                        <fieldname>sa_learn</fieldname>
+                        <type>checkbox</type>
+                        <description><![CDATA[Host SpamAssassin spam/ham auto learn on this server]]></description>
+                </field>
+                <field>
+                        <fielddescr>Sa-Learn domain</fielddescr>
+                        <fieldname>sa_learn_domain</fieldname>
+                        <type>input</type>
+			<size>30</size>
+                        <description><![CDATA[
+                                Local antispam box domain to receive <b>spam@</b> and <b>ham@</b> learn messages<br>.
+				You may need to create a mx record for this domain in order to receive sa-learn.<br>
+                                Leave empty to use @antispam.local domain.</b>
+                        ]]></description>
+                </field>
 		<field>
 			<fielddescr>Policydv2 Location</fielddescr>
 			<fieldname>antispam_location</fieldname>
@@ -344,6 +515,9 @@
 			<size>50</size>
 		</field>
 	</fields>
+        <custom_php_command_before_form>
+                postfix_check_config();
+        </custom_php_command_before_form>
 	<custom_php_install_command>
 		postfix_php_install_command();
 	</custom_php_install_command>
@@ -351,7 +525,6 @@
 		postfix_php_deinstall_command();
 	</custom_php_deinstall_command>
 	<custom_php_validation_command>
-		postfix_validate_input($_POST, $input_errors);
 	</custom_php_validation_command>	
 	<custom_php_resync_config_command>
 		sync_package_postfix();
